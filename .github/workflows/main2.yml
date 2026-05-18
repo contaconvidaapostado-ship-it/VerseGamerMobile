@@ -1,4 +1,4 @@
-name: VerseGamer Ultimate Builder
+name: VerseGamer Final Fix - Ultra Stable
 
 on:
   push:
@@ -10,62 +10,103 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. Baixar Código do Repositório
+      - name: 1. Checkout
         uses: actions/checkout@v4
 
-      - name: 2. Configurar Ambiente Java 17 (Estável)
+      - name: 2. Java 17 Setup
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 3. Extração e Reorganização Inteligente
+      - name: 3. Limpeza Radical e Extração
         run: |
-          # Criar pasta temporária e extrair
           mkdir -p raw_data
           ZIP_FILE=$(find . -name "*.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then echo "❌ Erro: Nenhum arquivo ZIP encontrado no GitHub!"; exit 1; fi
+          if [ -z "$ZIP_FILE" ]; then echo "❌ ZIP não encontrado!"; exit 1; fi
           unzip -o "$ZIP_FILE" -d ./raw_data
           
-          # Localizar a pasta real do projeto (onde está o settings.gradle.kts)
-          REAL_ROOT=$(find ./raw_data -name "settings.gradle*" -printf '%h' -quit)
-          if [ -z "$REAL_ROOT" ]; then echo "❌ Erro: ZIP não contém um projeto Android válido!"; exit 1; fi
+          # Achar a raiz do projeto original e extrair o código fonte
+          REAL_ROOT=$(find ./raw_data -name "build.gradle*" -printf '%h' -quit)
           
-          # Limpar raiz do GitHub e mover o projeto para lá
-          echo "✅ Projeto localizado em $REAL_ROOT. Movendo para a raiz..."
+          # Apagar arquivos de configuração antigos para evitar conflitos
+          rm -rf app/ gradle/ gradlew gradlew.bat build.gradle.kts settings.gradle.kts settings.gradle
+          
+          # Mover o código fonte (pastas src, etc) para a nova estrutura
           cp -rn $REAL_ROOT/* .
           
-          # Listar arquivos para log de segurança
-          ls -R
-
-      - name: 4. Reparo de Compatibilidade (JVM & Kotlin)
+      - name: 4. Reconstrução Estável (Groovy Settings)
         run: |
-          # Forçar Java 17 em todos os arquivos build.gradle e build.gradle.kts
-          find . -name "build.gradle*" -exec sed -i 's/sourceCompatibility = .*/sourceCompatibility = JavaVersion.VERSION_17/g' {} +
-          find . -name "build.gradle*" -exec sed -i 's/targetCompatibility = .*/targetCompatibility = JavaVersion.VERSION_17/g' {} +
-          find . -name "build.gradle*" -exec sed -i 's/jvmTarget = .*/jvmTarget = "17"/g' {} +
+          # Criar pasta app se não existir
+          mkdir -p app
           
-          # Garantir que o repositório MavenCentral e Google existam
-          find . -name "settings.gradle*" -exec sed -i '/repositories {/a \        google()\n        mavenCentral()' {} +
+          # 1. Criar build.gradle.kts do APP (Kotlin DSL está OK aqui)
+          cat <<EOF > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.versegamer.mobile"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.versegamer.mobile"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.4" }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          dependencies {
+              implementation("dev.rikka.shizuku:api:13.1.0")
+              implementation("dev.rikka.shizuku:provider:13.1.0")
+              implementation("androidx.compose.material3:material3:1.2.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+          }
+          EOF
 
-      - name: 5. Fabricação do Motor Gradle 8.2 (Anti-Erro)
+          # 2. Criar settings.gradle em GROOVY (Para evitar o erro de 'Unresolved reference')
+          cat <<EOF > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "VerseGamerMobile"
+          include ':app'
+          EOF
+
+      - name: 5. Forçar Gradle 8.2 e Wrapper
         run: |
-          echo "🛠️ Gerando novo Gradlew 8.2..."
-          rm -f gradlew
-          rm -rf gradle/
+          rm -rf gradle/ gradlew gradlew.bat
           wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
           unzip -q gradle-8.2-bin.zip
           ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: 6. Build Final do APK (Modo Blindado)
+      - name: 6. Build Final Blindado
         run: |
-          # --no-daemon economiza memória
-          # -Dorg.gradle.native=false evita erros de biblioteca nativa
-          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false --stacktrace
+          # -Dorg.gradle.native=false resolve o erro de biblioteca nativa no runner
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
 
-      - name: 7. Disponibilizar APK para Download
+      - name: 7. Download do APK
         uses: actions/upload-artifact@v4
         with:
-          name: VerseGamer-Mobile-APK
+          name: VerseGamer-Final-APK
           path: "app/build/outputs/apk/debug/*.apk"
