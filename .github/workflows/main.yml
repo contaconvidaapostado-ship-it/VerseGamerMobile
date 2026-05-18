@@ -1,4 +1,4 @@
-name: Build Android APK from ZIP
+name: Build Android APK (Fix Java Version)
 
 on:
   push:
@@ -10,52 +10,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Baixa o arquivo ZIP do seu repositório
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Configura o Java (SEM CACHE para não dar erro)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          # Removi a linha de cache que estava causando o seu erro
 
-      # 3. Descompacta e organiza os arquivos
-      - name: Unzip Project
+      - name: Unzip and Fix Gradle Version
         run: |
-          # Procura o arquivo .zip e descompacta em uma pasta temporária
-          mkdir temp_project
-          find . -name "*.zip" -exec unzip -o {} -d ./temp_project \;
+          # 1. Descompactar o ZIP
+          find . -name "*.zip" -exec unzip -o {} -d ./temp_folder \;
           
-          # Entra na pasta descompactada e move os arquivos para a raiz do GitHub
-          # Isso corrige o problema de "pasta dentro de pasta"
-          cd temp_project
-          PROJECT_ROOT=$(find . -name "build.gradle*" -printf '%h' -quit)
-          if [ -n "$PROJECT_ROOT" ]; then
-            cp -rn $PROJECT_ROOT/* ..
-          else
-            echo "ERRO: Não encontrei os arquivos do Android dentro do ZIP!"
+          # 2. Mover arquivos para a raiz do repositório
+          PROJECT_ROOT=$(find ./temp_folder -name "build.gradle*" -printf '%h' -quit)
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "ERRO: Arquivos do Android não encontrados no ZIP!"
             exit 1
           fi
-          cd ..
+          cp -rn $PROJECT_ROOT/* .
           
-          # Garante que o Gradle tenha permissão para rodar
-          # Se não houver gradlew no ZIP, nós criamos um
-          if [ ! -f "gradlew" ]; then
-            sudo apt-get install gradle -y
-            gradle wrapper
-          fi
+          # 3. FORÇAR GRADLE 8.2 (Compatível com Java 17)
+          # Isso apaga o gradlew antigo e cria um novo e moderno
+          echo "🛠️ Atualizando Gradle para versão 8.2..."
+          rm -f gradlew
+          wget https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      # 4. Executa a construção do APK
       - name: Build with Gradle
-        run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
+        run: |
+          # Executa o build com a versão correta
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
 
-      # 5. Disponibiliza o APK para download
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: VerseGamer-Final-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: "app/build/outputs/apk/debug/*.apk"
