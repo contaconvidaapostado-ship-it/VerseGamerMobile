@@ -1,0 +1,53 @@
+name: Build Android APK (Auto-Fix Gradle)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Unzip and Fix Structure
+        run: |
+          # 1. Descompactar o ZIP
+          find . -name "*.zip" -exec unzip -o {} -d ./temp_folder \;
+          
+          # 2. Mover arquivos para a raiz
+          # Procura onde está o 'settings.gradle.kts' ou 'build.gradle.kts'
+          PROJECT_ROOT=$(find ./temp_folder -name "build.gradle*" -printf '%h' -quit)
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "ERRO: Arquivos do Android não encontrados no ZIP!"
+            exit 1
+          fi
+          cp -rn $PROJECT_ROOT/* .
+          
+          # 3. AUTO-FIX: Criar o gradlew se ele estiver faltando
+          if [ ! -f "gradlew" ]; then
+            echo "⚠️ gradlew não encontrado. Instalando Gradle para gerar um novo..."
+            sudo apt-get install gradle -y
+            gradle wrapper
+          fi
+          chmod +x gradlew
+
+      - name: Build with Gradle
+        run: |
+          # Executa o build ignorando erros de bibliotecas nativas (comum em CI)
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerseGamer-Final-APK
+          path: "app/build/outputs/apk/debug/*.apk"
