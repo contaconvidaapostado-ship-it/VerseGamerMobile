@@ -1,4 +1,4 @@
-name: Build Android APK (Fix Java Version)
+name: Build Android APK (Fix JVM Target)
 
 on:
   push:
@@ -19,22 +19,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Unzip and Fix Gradle Version
+      - name: Unzip and Fix Project
         run: |
           # 1. Descompactar o ZIP
           find . -name "*.zip" -exec unzip -o {} -d ./temp_folder \;
           
-          # 2. Mover arquivos para a raiz do repositório
+          # 2. Mover arquivos para a raiz
           PROJECT_ROOT=$(find ./temp_folder -name "build.gradle*" -printf '%h' -quit)
-          if [ -z "$PROJECT_ROOT" ]; then
-            echo "ERRO: Arquivos do Android não encontrados no ZIP!"
-            exit 1
-          fi
           cp -rn $PROJECT_ROOT/* .
           
-          # 3. FORÇAR GRADLE 8.2 (Compatível com Java 17)
-          # Isso apaga o gradlew antigo e cria um novo e moderno
-          echo "🛠️ Atualizando Gradle para versão 8.2..."
+          # 3. CORREÇÃO DE COMPATIBILIDADE (Java + Kotlin -> 17)
+          # Este comando procura as configurações de compilação no build.gradle.kts 
+          # e garante que o Java e o Kotlin usem a versão 17.
+          sed -i 's/sourceCompatibility = .*/sourceCompatibility = JavaVersion.VERSION_17/g' app/build.gradle.kts || true
+          sed -i 's/targetCompatibility = .*/targetCompatibility = JavaVersion.VERSION_17/g' app/build.gradle.kts || true
+          sed -i 's/jvmTarget = .*/jvmTarget = "17"/g' app/build.gradle.kts || true
+
+          # 4. Atualizar o Gradle Wrapper para a versão 8.2
           rm -f gradlew
           wget https://services.gradle.org/distributions/gradle-8.2-bin.zip
           unzip -q gradle-8.2-bin.zip
@@ -43,7 +44,6 @@ jobs:
 
       - name: Build with Gradle
         run: |
-          # Executa o build com a versão correta
           ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
 
       - name: Upload APK
