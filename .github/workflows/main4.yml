@@ -1,4 +1,4 @@
-name: VerseGamer Nuke & Build
+name: VerseGamer V16 - Full Dashboard Fix
 
 on:
   push:
@@ -10,57 +10,141 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. Checkout do Código
+      - name: 1. Checkout
         uses: actions/checkout@v4
 
-      - name: 2. Configurar Java 17
+      - name: 2. Java 17 Setup
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 3. Limpeza Radical e Extração
+      - name: 3. Limpeza e Extração do ZIP
         run: |
-          # Criar pasta temporária
           mkdir -p raw_data
           ZIP_FILE=$(find . -name "*.zip" | head -n 1)
           if [ -z "$ZIP_FILE" ]; then echo "❌ ZIP não encontrado!"; exit 1; fi
           unzip -o "$ZIP_FILE" -d ./raw_data
           
-          # Achar a raiz do projeto (onde tem o settings ou build)
-          REAL_ROOT=$(find ./raw_data -name "build.gradle*" -printf '%h' -quit)
-          
-          # APAGAR TUDO que possa causar conflito na raiz do GitHub
-          rm -rf app/ gradle/ gradlew gradlew.bat build.gradle.kts settings.gradle.kts
-          
-          # Mover apenas o que interessa (o seu código) para a raiz
+          # Achar a raiz do projeto e copiar arquivos
+          REAL_ROOT=$(find ./raw_data -name "settings.gradle*" -printf '%h' -quit)
           cp -rn $REAL_ROOT/* .
           
-      - name: 4. Reconstrução dos Arquivos de Configuração (Garantia de Sintaxe)
+          # Limpar pastas de código antigas para evitar classes duplicadas
+          rm -rf app/src/main/java
+          rm -rf app/src/main/kotlin
+          mkdir -p app/src/main/kotlin/com/versegamer/mobile/engine
+
+      - name: 4. Escrita Blindada do Motor (ShellExecutor)
+        # Usamos 'EOF' com aspas para o Bash não mexer no código Kotlin
         run: |
-          # Criar um build.gradle.kts zerado e perfeito para o APP
-          mkdir -p app
-          cat <<EOF > app/build.gradle.kts
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
+          cat <<'EOF' > app/src/main/kotlin/com/versegamer/mobile/engine/ShellExecutor.kt
+          package com.versegamer.mobile.engine
+          import dev.rikka.shizuku.Shizuku
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.io.BufferedReader
+          import java.io.InputStreamReader
+          object ShellExecutor {
+              suspend fun execute(cmd: String): String = withContext(Dispatchers.IO) {
+                  if (!Shizuku.pingBinder()) return@withContext "Shizuku Desconectado"
+                  try {
+                      val p = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                      val res = BufferedReader(InputStreamReader(p.inputStream)).readText()
+                      p.waitFor()
+                      if (res.isBlank()) "Aplicado com Sucesso" else res
+                  } catch (e: Exception) { "Erro: ${e.message}" }
+              }
           }
+          EOF
+
+      - name: 5. Escrita Blindada da Interface (MainActivity)
+        run: |
+          cat <<'EOF' > app/src/main/kotlin/com/versegamer/mobile/MainActivity.kt
+          package com.versegamer.mobile
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.*
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.*
+          import com.versegamer.mobile.engine.ShellExecutor
+          import kotlinx.coroutines.*
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent { Dashboard() }
+              }
+          }
+
+          @Composable
+          fun Dashboard() {
+              val scope = rememberCoroutineScope()
+              var log by remember { mutableStateOf("Sistema Pronto") }
+              var dpi by remember { mutableStateOf(440f) }
+
+              Column(modifier = Modifier.fillMaxSize().background(Color(0xFF050505)).padding(16.dp).verticalScroll(rememberScrollState())) {
+                  Text("VERSEGAMER V16", fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color(0xFF00D9FF))
+                  Text("ELITE DASHBOARD", color = Color.Red, fontSize = 12.sp)
+                  
+                  Spacer(Modifier.height(20.dp))
+
+                  Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)), border = BorderStroke(1.dp, Color(0xFF39FF14))) {
+                      Text("STATUS: $log", Modifier.padding(12.dp), color = Color.White, fontSize = 12.sp)
+                  }
+                  
+                  Spacer(Modifier.height(20.dp))
+                  
+                  Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                      OptBtn("TOUCH BOOST", Color(0xFF00D9FF), Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("settings put secure long_press_timeout 180; setprop debug.touch_low_latency 1") } }
+                      OptBtn("FPS BOOST", Color(0xFFFF0000), Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("settings put system peak_refresh_rate 120.0; setprop debug.hwui.renderer skia") } }
+                  }
+                  Spacer(Modifier.height(8.dp))
+                  Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                      OptBtn("NET BOOSTER", Color(0xFF39FF14), Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("settings put global wifi_scan_throttle_enabled 0") } }
+                      OptBtn("RESET ALL", Color.White, Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("wm density reset; cmd power set-fixed-performance-mode-enabled false") } }
+                  }
+
+                  Spacer(Modifier.height(20.dp))
+                  Button(onClick = { scope.launch { log = ShellExecutor.execute("cmd power set-fixed-performance-mode-enabled true; am kill-all") } }, 
+                      modifier = Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(8.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6AC00))) {
+                      Text("ATIVAR MODO DEUS (EXTREMO)", fontWeight = FontWeight.Bold, color = Color.Black)
+                  }
+
+                  Spacer(Modifier.height(30.dp))
+                  Text("DPI ATUAL: ${dpi.toInt()}", color = Color.Gray)
+                  Slider(value = dpi, onValueChange = { dpi = it }, valueRange = 320f..600f, onValueChangeFinished = { scope.launch { ShellExecutor.execute("wm density ${dpi.toInt()}") } })
+              }
+          }
+
+          @Composable
+          fun OptBtn(t: String, c: Color, m: Modifier, onClick: () -> Unit) {
+              OutlinedButton(onClick = onClick, modifier = m.height(55.dp), border = BorderStroke(1.dp, c), shape = RoundedCornerShape(8.dp)) {
+                  Text(t, color = c, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+              }
+          }
+          EOF
+
+      - name: 6. Reconstrução do Build e Settings
+        run: |
+          cat <<EOF > app/build.gradle.kts
+          plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
           android {
               namespace = "com.versegamer.mobile"
               compileSdk = 34
-              defaultConfig {
-                  applicationId = "com.versegamer.mobile"
-                  minSdk = 29
-                  targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
-              }
+              defaultConfig { applicationId = "com.versegamer.mobile"; minSdk = 29; targetSdk = 34; versionCode = 1; versionName = "1.0" }
               buildFeatures { compose = true }
               composeOptions { kotlinCompilerExtensionVersion = "1.5.4" }
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
+              compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = "17" }
           }
           dependencies {
@@ -71,39 +155,24 @@ jobs:
           }
           EOF
 
-          # Criar um settings.gradle.kts zerado e perfeito
-          cat <<EOF > settings.gradle.kts
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
-          }
+          cat <<EOF > settings.gradle
           rootProject.name = "VerseGamerMobile"
-          include(":app")
+          include ':app'
           EOF
 
-      - name: 5. Instalação Forçada do Gradle 8.2 (O Corretor de Erros)
+      - name: 7. Gerar Novo Motor Gradle 8.2
         run: |
-          # Remover qualquer resquício de wrapper antigo
-          rm -rf gradle/ gradlew gradlew.bat
-          
-          # Baixar o binário do Gradle 8.2 diretamente
+          rm -rf gradle/ gradlew
           wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
           unzip -q gradle-8.2-bin.zip
-          
-          # Usar o binário baixado para gerar um NOVO wrapper compatível com Java 17
           ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: 6. Build Final (Modo Blindado)
-        run: |
-          # Agora usamos o gradlew que ACABAMOS de criar
-          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
+      - name: 8. Build Final (Modo Debug)
+        run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false --stacktrace
 
-      - name: 7. Upload do APK
+      - name: 9. Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: VerseGamer-APK-Final
+          name: VerseGamer-Final-V16
           path: "app/build/outputs/apk/debug/*.apk"
