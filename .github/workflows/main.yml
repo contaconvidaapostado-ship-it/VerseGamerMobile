@@ -1,4 +1,4 @@
-name: Build Android APK (Fix JVM Target)
+name: VerseGamer Ultimate Auto-Fixer
 
 on:
   push:
@@ -10,44 +10,109 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: 1. Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: 2. Java 17 Setup
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Unzip and Fix Project
+      - name: 3. Extração e Limpeza
         run: |
-          # 1. Descompactar o ZIP
-          find . -name "*.zip" -exec unzip -o {} -d ./temp_folder \;
+          mkdir -p raw_data
+          ZIP_FILE=$(find . -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then echo "❌ ZIP não encontrado!"; exit 1; fi
+          unzip -o "$ZIP_FILE" -d ./raw_data
           
-          # 2. Mover arquivos para a raiz
-          PROJECT_ROOT=$(find ./temp_folder -name "build.gradle*" -printf '%h' -quit)
-          cp -rn $PROJECT_ROOT/* .
+          # Achar a raiz do projeto
+          REAL_ROOT=$(find ./raw_data -name "settings.gradle*" -printf '%h' -quit)
+          cp -rn $REAL_ROOT/* .
           
-          # 3. CORREÇÃO DE COMPATIBILIDADE (Java + Kotlin -> 17)
-          # Este comando procura as configurações de compilação no build.gradle.kts 
-          # e garante que o Java e o Kotlin usem a versão 17.
-          sed -i 's/sourceCompatibility = .*/sourceCompatibility = JavaVersion.VERSION_17/g' app/build.gradle.kts || true
-          sed -i 's/targetCompatibility = .*/targetCompatibility = JavaVersion.VERSION_17/g' app/build.gradle.kts || true
-          sed -i 's/jvmTarget = .*/jvmTarget = "17"/g' app/build.gradle.kts || true
+      - name: 4. RECONSTRUÇÃO TOTAL (Corrigindo Erro de Chaves)
+        run: |
+          echo "🛠️ Reconstruindo build.gradle.kts para evitar erros de sintaxe..."
+          
+          # Sobrescrever o build.gradle.kts do app com um código limpo e garantido
+          cat <<EOF > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
 
-          # 4. Atualizar o Gradle Wrapper para a versão 8.2
+          android {
+              namespace = "com.versegamer.mobile"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.versegamer.mobile"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              buildFeatures {
+                  compose = true
+              }
+
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.4"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("dev.rikka.shizuku:api:13.1.0")
+              implementation("dev.rikka.shizuku:provider:13.1.0")
+              implementation("androidx.compose.material3:material3:1.2.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+          }
+          EOF
+
+          # Reconstruir settings.gradle.kts para garantir os repositórios
+          cat <<EOF > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "VerseGamerMobile"
+          include(":app")
+          EOF
+
+      - name: 5. Gerar Motor Gradle 8.2
+        run: |
           rm -f gradlew
-          wget https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
           unzip -q gradle-8.2-bin.zip
           ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: Build with Gradle
-        run: |
-          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
+      - name: 6. Build Blindado
+        run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
 
-      - name: Upload APK
+      - name: 7. Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: VerseGamer-Final-APK
+          name: VerseGamer-Mobile-APK
           path: "app/build/outputs/apk/debug/*.apk"
