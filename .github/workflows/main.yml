@@ -1,4 +1,4 @@
-name: VerseGamer Ultimate Auto-Fixer
+name: VerseGamer V16 - Final Dashboard
 
 on:
   push:
@@ -23,96 +23,154 @@ jobs:
         run: |
           mkdir -p raw_data
           ZIP_FILE=$(find . -name "*.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then echo "❌ ZIP não encontrado!"; exit 1; fi
           unzip -o "$ZIP_FILE" -d ./raw_data
-          
-          # Achar a raiz do projeto
           REAL_ROOT=$(find ./raw_data -name "settings.gradle*" -printf '%h' -quit)
           cp -rn $REAL_ROOT/* .
           
-      - name: 4. RECONSTRUÇÃO TOTAL (Corrigindo Erro de Chaves)
+      - name: 4. RECONSTRUÇÃO DA INTERFACE COMPLETA (Dashboard Elite)
         run: |
-          echo "🛠️ Reconstruindo build.gradle.kts para evitar erros de sintaxe..."
+          mkdir -p app/src/main/kotlin/com/versegamer/mobile/engine
           
-          # Sobrescrever o build.gradle.kts do app com um código limpo e garantido
-          cat <<EOF > app/build.gradle.kts
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
+          # Escrever o ShellExecutor (O Motor)
+          cat <<EOF > app/src/main/kotlin/com/versegamer/mobile/engine/ShellExecutor.kt
+          package com.versegamer.mobile.engine
+          import dev.rikka.shizuku.Shizuku
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.io.BufferedReader
+          import java.io.InputStreamReader
+          object ShellExecutor {
+              fun isAvailable() = Shizuku.pingBinder()
+              suspend fun execute(cmd: String): String = withContext(Dispatchers.IO) {
+                  if (!Shizuku.pingBinder()) return@withContext "Shizuku Off"
+                  try {
+                      val p = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                      val res = BufferedReader(InputStreamReader(p.inputStream)).readText()
+                      p.waitFor()
+                      if (res.isBlank()) "Sucesso!" else res
+                  } catch (e: Exception) { "Erro: \${e.message}" }
+              }
+          }
+          EOF
+
+          # Escrever a MainActivity (A Interface com todos os botões)
+          cat <<EOF > app/src/main/kotlin/com/versegamer/mobile/MainActivity.kt
+          package com.versegamer.mobile
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.*
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.*
+          import com.versegamer.mobile.engine.ShellExecutor
+          import kotlinx.coroutines.*
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent { Dashboard() }
+              }
           }
 
+          @Composable
+          fun Dashboard() {
+              val scope = rememberCoroutineScope()
+              var log by remember { mutableStateOf("Aguardando...") }
+              var dpi by remember { mutableStateOf(440f) }
+
+              Column(modifier = Modifier.fillMaxSize().background(Color(0xFF050505)).padding(16.dp).verticalScroll(rememberScrollState())) {
+                  Text("VERSEGAMER V16", fontSize = 32.sp, fontWeight = FontWeight.Black, color = Color(0xFF00D9FF))
+                  Text("ELITE OPTIMIZER", color = Color.Red, fontSize = 12.sp)
+                  Spacer(Modifier.height(20.dp))
+
+                  // Console Log Card
+                  Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)), border = BorderStroke(1.dp, Color(0xFF39FF14))) {
+                      Text(log, Modifier.padding(12.dp), color = Color.White, fontSize = 12.sp)
+                  }
+                  
+                  Spacer(Modifier.height(20.dp))
+                  Text("MÓDULOS DE PERFORMANCE", color = Color.Gray, fontSize = 11.sp)
+                  
+                  Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                      OptBtn("TOUCH BOOST", Color(0xFF00D9FF), Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("settings put secure long_press_timeout 180; setprop debug.touch_low_latency 1") } }
+                      OptBtn("FPS BOOST", Color(0xFFFF0000), Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("settings put system peak_refresh_rate 120.0; setprop debug.hwui.renderer skia") } }
+                  }
+                  Spacer(Modifier.height(8.dp))
+                  Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                      OptBtn("NET BOOSTER", Color(0xFF39FF14), Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("settings put global wifi_scan_throttle_enabled 0") } }
+                      OptBtn("RESET ALL", Color.White, Modifier.weight(1f)) { scope.launch { log = ShellExecutor.execute("wm density reset; cmd power set-fixed-performance-mode-enabled false") } }
+                  }
+
+                  Spacer(Modifier.height(20.dp))
+                  // Botão MODO DEUS
+                  Button(onClick = { scope.launch { log = ShellExecutor.execute("cmd power set-fixed-performance-mode-enabled true; am kill-all") } }, 
+                      modifier = Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(8.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6AC00))) {
+                      Text("ATIVAR MODO DEUS (EXTREMO)", fontWeight = FontWeight.Bold)
+                  }
+
+                  Spacer(Modifier.height(30.dp))
+                  Text("DPI ATUAL: \${dpi.toInt()}", color = Color.Gray)
+                  Slider(value = dpi, onValueChange = { dpi = it }, valueRange = 320f..600f, onValueChangeFinished = { scope.launch { ShellExecutor.execute("wm density \${dpi.toInt()}") } })
+              }
+          }
+
+          @Composable
+          fun OptBtn(t: String, c: Color, m: Modifier, onClick: () -> Unit) {
+              OutlinedButton(onClick = onClick, modifier = m.height(55.dp), border = BorderStroke(1.dp, c), shape = RoundedCornerShape(8.dp)) {
+                  Text(t, color = c, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+              }
+          }
+          EOF
+
+          # Reconstruir build.gradle.kts para garantir dependências
+          cat <<EOF > app/build.gradle.kts
+          plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
           android {
               namespace = "com.versegamer.mobile"
               compileSdk = 34
-
-              defaultConfig {
-                  applicationId = "com.versegamer.mobile"
-                  minSdk = 29
-                  targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
-              }
-
-              buildFeatures {
-                  compose = true
-              }
-
-              composeOptions {
-                  kotlinCompilerExtensionVersion = "1.5.4"
-              }
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
+              defaultConfig { applicationId = "com.versegamer.mobile"; minSdk = 29; targetSdk = 34; versionCode = 1; versionName = "1.0" }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.4" }
+              compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+              kotlinOptions { jvmTarget = "17" }
           }
-
           dependencies {
               implementation("dev.rikka.shizuku:api:13.1.0")
               implementation("dev.rikka.shizuku:provider:13.1.0")
               implementation("androidx.compose.material3:material3:1.2.0")
               implementation("androidx.activity:activity-compose:1.8.2")
-              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
           }
           EOF
 
-          # Reconstruir settings.gradle.kts para garantir os repositórios
-          cat <<EOF > settings.gradle.kts
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+          # Reconstruir settings.gradle (Groovy) para estabilidade
+          cat <<EOF > settings.gradle
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
           rootProject.name = "VerseGamerMobile"
-          include(":app")
+          include ':app'
           EOF
 
       - name: 5. Gerar Motor Gradle 8.2
         run: |
-          rm -f gradlew
+          rm -rf gradle/ gradlew
           wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
           unzip -q gradle-8.2-bin.zip
           ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: 6. Build Blindado
+      - name: 6. Build Final
         run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
 
       - name: 7. Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: VerseGamer-Mobile-APK
+          name: VerseGamer-Full-Dashboard
           path: "app/build/outputs/apk/debug/*.apk"
