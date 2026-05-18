@@ -1,4 +1,4 @@
-name: Build Android APK (Auto-Fix Gradle)
+name: VerseGamer Nuke & Build
 
 on:
   push:
@@ -10,44 +10,100 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: 1. Checkout do Código
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: 2. Configurar Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Unzip and Fix Structure
+      - name: 3. Limpeza Radical e Extração
         run: |
-          # 1. Descompactar o ZIP
-          find . -name "*.zip" -exec unzip -o {} -d ./temp_folder \;
+          # Criar pasta temporária
+          mkdir -p raw_data
+          ZIP_FILE=$(find . -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then echo "❌ ZIP não encontrado!"; exit 1; fi
+          unzip -o "$ZIP_FILE" -d ./raw_data
           
-          # 2. Mover arquivos para a raiz
-          # Procura onde está o 'settings.gradle.kts' ou 'build.gradle.kts'
-          PROJECT_ROOT=$(find ./temp_folder -name "build.gradle*" -printf '%h' -quit)
-          if [ -z "$PROJECT_ROOT" ]; then
-            echo "ERRO: Arquivos do Android não encontrados no ZIP!"
-            exit 1
-          fi
-          cp -rn $PROJECT_ROOT/* .
+          # Achar a raiz do projeto (onde tem o settings ou build)
+          REAL_ROOT=$(find ./raw_data -name "build.gradle*" -printf '%h' -quit)
           
-          # 3. AUTO-FIX: Criar o gradlew se ele estiver faltando
-          if [ ! -f "gradlew" ]; then
-            echo "⚠️ gradlew não encontrado. Instalando Gradle para gerar um novo..."
-            sudo apt-get install gradle -y
-            gradle wrapper
-          fi
+          # APAGAR TUDO que possa causar conflito na raiz do GitHub
+          rm -rf app/ gradle/ gradlew gradlew.bat build.gradle.kts settings.gradle.kts
+          
+          # Mover apenas o que interessa (o seu código) para a raiz
+          cp -rn $REAL_ROOT/* .
+          
+      - name: 4. Reconstrução dos Arquivos de Configuração (Garantia de Sintaxe)
+        run: |
+          # Criar um build.gradle.kts zerado e perfeito para o APP
+          mkdir -p app
+          cat <<EOF > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.versegamer.mobile"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.versegamer.mobile"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.4" }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          dependencies {
+              implementation("dev.rikka.shizuku:api:13.1.0")
+              implementation("dev.rikka.shizuku:provider:13.1.0")
+              implementation("androidx.compose.material3:material3:1.2.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+          }
+          EOF
+
+          # Criar um settings.gradle.kts zerado e perfeito
+          cat <<EOF > settings.gradle.kts
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "VerseGamerMobile"
+          include(":app")
+          EOF
+
+      - name: 5. Instalação Forçada do Gradle 8.2 (O Corretor de Erros)
+        run: |
+          # Remover qualquer resquício de wrapper antigo
+          rm -rf gradle/ gradlew gradlew.bat
+          
+          # Baixar o binário do Gradle 8.2 diretamente
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          
+          # Usar o binário baixado para gerar um NOVO wrapper compatível com Java 17
+          ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: Build with Gradle
+      - name: 6. Build Final (Modo Blindado)
         run: |
-          # Executa o build ignorando erros de bibliotecas nativas (comum em CI)
+          # Agora usamos o gradlew que ACABAMOS de criar
           ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false
 
-      - name: Upload APK
+      - name: 7. Upload do APK
         uses: actions/upload-artifact@v4
         with:
-          name: VerseGamer-Final-APK
+          name: VerseGamer-APK-Final
           path: "app/build/outputs/apk/debug/*.apk"
