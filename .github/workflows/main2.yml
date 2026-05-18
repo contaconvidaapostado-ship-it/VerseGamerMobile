@@ -1,4 +1,4 @@
-name: Build Android APK from ZIP
+name: VerseGamer Ultimate Builder
 
 on:
   push:
@@ -10,51 +10,62 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: 1. Baixar Código do Repositório
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: 2. Configurar Ambiente Java 17 (Estável)
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          # Removemos o 'cache: gradle' daqui para evitar o erro inicial
 
-      - name: Unzip and Organize Project
+      - name: 3. Extração e Reorganização Inteligente
         run: |
-          # 1. Instala o unzip se não houver
-          sudo apt-get install unzip -y
+          # Criar pasta temporária e extrair
+          mkdir -p raw_data
+          ZIP_FILE=$(find . -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then echo "❌ Erro: Nenhum arquivo ZIP encontrado no GitHub!"; exit 1; fi
+          unzip -o "$ZIP_FILE" -d ./raw_data
           
-          # 2. Procura qualquer arquivo .zip e descompacta tudo na raiz
-          find . -name "*.zip" -exec unzip -o {} -d ./temp_unzip/ \;
+          # Localizar a pasta real do projeto (onde está o settings.gradle.kts)
+          REAL_ROOT=$(find ./raw_data -name "settings.gradle*" -printf '%h' -quit)
+          if [ -z "$REAL_ROOT" ]; then echo "❌ Erro: ZIP não contém um projeto Android válido!"; exit 1; fi
           
-          # 3. Mover os arquivos da pasta interna para a raiz do GitHub
-          # Isso resolve o problema se o ZIP criou uma pasta com o nome do projeto
-          find ./temp_unzip -name "settings.gradle.kts" -o -name "settings.gradle" | xargs -I {} dirname {} > project_root.txt
-          ROOT_DIR=$(cat project_root.txt)
-          cp -rn $ROOT_DIR/* .
+          # Limpar raiz do GitHub e mover o projeto para lá
+          echo "✅ Projeto localizado em $REAL_ROOT. Movendo para a raiz..."
+          cp -rn $REAL_ROOT/* .
           
-          # 4. Mostrar os arquivos para conferência no log
-          echo "Estrutura de arquivos após organizar:"
+          # Listar arquivos para log de segurança
           ls -R
 
-      - name: Grant execute permission for gradlew
+      - name: 4. Reparo de Compatibilidade (JVM & Kotlin)
         run: |
-          # Procura o arquivo gradlew e dá permissão de execução
-          find . -name "gradlew" -exec chmod +x {} +
+          # Forçar Java 17 em todos os arquivos build.gradle e build.gradle.kts
+          find . -name "build.gradle*" -exec sed -i 's/sourceCompatibility = .*/sourceCompatibility = JavaVersion.VERSION_17/g' {} +
+          find . -name "build.gradle*" -exec sed -i 's/targetCompatibility = .*/targetCompatibility = JavaVersion.VERSION_17/g' {} +
+          find . -name "build.gradle*" -exec sed -i 's/jvmTarget = .*/jvmTarget = "17"/g' {} +
+          
+          # Garantir que o repositório MavenCentral e Google existam
+          find . -name "settings.gradle*" -exec sed -i '/repositories {/a \        google()\n        mavenCentral()' {} +
 
-      - name: Build with Gradle
+      - name: 5. Fabricação do Motor Gradle 8.2 (Anti-Erro)
         run: |
-          # Localiza o diretório que contém o gradlew e roda o build
-          GRADLE_EXEC=$(find . -name "gradlew" | head -n 1)
-          if [ -z "$GRADLE_EXEC" ]; then
-            echo "ERRO: Arquivo gradlew não encontrado!"
-            exit 1
-          fi
-          $GRADLE_EXEC assembleDebug --stacktrace --no-daemon
+          echo "🛠️ Gerando novo Gradlew 8.2..."
+          rm -f gradlew
+          rm -rf gradle/
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          ./gradle-8.2/bin/gradle wrapper --gradle-version 8.2
+          chmod +x gradlew
 
-      - name: Upload APK
+      - name: 6. Build Final do APK (Modo Blindado)
+        run: |
+          # --no-daemon economiza memória
+          # -Dorg.gradle.native=false evita erros de biblioteca nativa
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.native=false --stacktrace
+
+      - name: 7. Disponibilizar APK para Download
         uses: actions/upload-artifact@v4
         with:
-          name: VerseGamer-APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          name: VerseGamer-Mobile-APK
+          path: "app/build/outputs/apk/debug/*.apk"
